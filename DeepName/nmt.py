@@ -97,9 +97,9 @@ def add_arguments(parser):
       """)
 
   # copynet mechanism
-  parser.add_argument("--copynet", type="bool", nargs="?", const=True,
+  parser.add_argument("--deepname", type="bool", nargs="?", const=True,
                       default=False,
-                      help="Whether to add copynet mechanism.")
+                      help="Whether to add copy and non-copy mechanism.")
   parser.add_argument("--gen_vocab_size", type=int, default=None, help="""
       Generated target vocabulary size, namely, the target vocabulary excluding
       words from source sequences (copied words). Notice that the first
