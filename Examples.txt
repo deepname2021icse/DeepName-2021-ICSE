@@ -1,0 +1,895 @@
+10 methods having -10 LOC, callee has contributes, and DeepName can predict the name
+10 methods having -10 LOC, siblings has contributes, and DeepName can predict the name
+10 methods having -10 LOC, enclosing context has contributes, and DeepName can predict the name
+5 methods having +20 LOC and DeepName can predict the name
+
+//DeepName predicted: {Shell Console}
+	public ShellConsole(Shell shell) throws FileNotFoundException, IOException {
+        this(shell, Preferences.getSharedPreferences().getString(                  FileManagerSettings.SETTINGS_INITIAL_DIR.getId(),(String)FileManagerSettings.SETTINGS_INITIAL_DIR.getDefaultValue()));
+	}
+//Siblings:	
+	private Thread createStdErrThread(final InputStream err) {
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                int read = 0;
+
+                try {
+                    while (ShellConsole.this.mActive) {
+                        //Read only one byte with active wait
+                        int r = err.read();
+                        if (r == -1) {
+                            break;
+                        }
+
+                        // Type of command
+                        boolean async =
+                                ShellConsole.this.mActiveCommand != null &&
+                                ShellConsole.this.mActiveCommand instanceof AsyncResultProgram;
+
+                        StringBuffer sb = new StringBuffer();
+                        if (!ShellConsole.this.mCancelled) {
+                            ShellConsole.this.mSbErr.append((char)r);
+                            sb.append((char)r);
+
+                            //Notify asynchronous partial data
+                            if (ShellConsole.this.mStarted && async) {
+                                AsyncResultProgram program =
+                                        ((AsyncResultProgram)ShellConsole.this.mActiveCommand);
+                                if (program != null) {
+                                    program.parsePartialErrResult(new String(new char[]{(char)r}));
+                                }
+                            }
+
+                            toStdErr(sb.toString());
+                        }
+
+                        //Has more data? Read with available as more as exists
+                        //or maximum loop count is rebased
+                        int count = 0;
+                        while (err.available() > 0 && count < 10) {
+                            count++;
+                            int available = Math.min(err.available(),
+                                                        ShellConsole.this.mBufferSize);
+                            byte[] data = new byte[available];
+                            read = err.read(data);
+
+                            // Type of command
+                            async =
+                                ShellConsole.this.mActiveCommand != null &&
+                                ShellConsole.this.mActiveCommand instanceof AsyncResultProgram;
+
+                            // Add to stderr
+                            String s = new String(data, 0, read);
+                            ShellConsole.this.mSbErr.append(s);
+                            sb.append(s);
+
+                            //Notify asynchronous partial data
+                            if (async) {
+                                AsyncResultProgram program =
+                                        ((AsyncResultProgram)ShellConsole.this.mActiveCommand);
+                                if (program != null) {
+                                    program.parsePartialErrResult(s);
+                                }
+                            }
+                            toStdErr(s);
+
+                            //Wait for buffer to be filled
+                            try {
+                                Thread.sleep(50L);
+                            } catch (Throwable ex) {
+                                /**NON BLOCK**/
+                            }
+                        }
+
+                        //Asynchronous programs can cause a lot of output, control buffers
+                        //for a low memory footprint
+                        if (ShellConsole.this.mActiveCommand != null &&
+                                ShellConsole.this.mActiveCommand instanceof AsyncResultProgram) {
+                            trimBuffer(ShellConsole.this.mSbIn);
+                            trimBuffer(ShellConsole.this.mSbErr);
+                        }
+                    }
+                } catch (Exception ioEx) {
+                    notifyProcessExit(ioEx);
+                }
+            }
+        });
+        t.setName(String.format("%s", "stderr")); //$NON-NLS-1$//$NON-NLS-2$
+        t.start();
+        return t;
+    }
+	
+--------------------
+//DeepName predicted: {read File}
+	private void readFile() {
+        // For now editor is not dirty and editable.
+        setDirty(false);
+        this.mBinary = false;
+
+        // Check for a valid action
+        String action = getIntent().getAction();
+        if (action == null ||
+                (action.compareTo(Intent.ACTION_VIEW) != 0) &&
+                (action.compareTo(Intent.ACTION_EDIT) != 0)) {
+            DialogHelper.showToast(
+                    this, R.string.editor_invalid_file_msg, Toast.LENGTH_SHORT);
+            return;
+        }
+        // This var should be set depending on ACTION_VIEW or ACTION_EDIT action, but for
+        // better compatibility, IntentsActionPolicy use always ACTION_VIEW, so we have
+        // to ignore this check here
+        this.mReadOnly = false;
+
+        // Read the intent and check that is has a valid request
+        String path = getIntent().getData().getPath();
+        if (path == null || path.length() == 0) {
+            DialogHelper.showToast(
+                    this, R.string.editor_invalid_file_msg, Toast.LENGTH_SHORT);
+            return;
+        }
+
+        // Set the title of the dialog
+        File f = new File(path);
+        this.mTitle.setText(f.getName());
+
+        // Check that we have access to the file (the real file, not the symlink)
+        try {
+            this.mFso = CommandHelper.getFileInfo(this, path, true, null);
+            if (this.mFso == null) {
+                DialogHelper.showToast(
+                        this, R.string.editor_file_not_found_msg, Toast.LENGTH_SHORT);
+                return;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to get file reference", e); //$NON-NLS-1$
+            DialogHelper.showToast(
+                    this, R.string.editor_file_not_found_msg, Toast.LENGTH_SHORT);
+            return;
+        }
+
+        // Check that we can handle the length of the file (by device)
+        if (this.mMaxFileSize < this.mFso.getSize()) {
+            DialogHelper.showToast(
+                    this, R.string.editor_file_exceed_size_msg, Toast.LENGTH_SHORT);
+            return;
+        }
+
+        // Read the file in background
+        asyncRead();
+    }
+--------------------
+//DeepName predicted: {check Intent}
+	void checkIntent(Intent intent) {
+        //Search action
+        if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
+            Intent searchIntent = new Intent(this, SearchActivity.class);
+            searchIntent.setAction(Intent.ACTION_SEARCH);
+            //- SearchActivity.EXTRA_SEARCH_DIRECTORY
+            searchIntent.putExtra(
+                    SearchActivity.EXTRA_SEARCH_DIRECTORY,
+                    getCurrentNavigationView().getCurrentDir());
+            //- SearchManager.APP_DATA
+            if (intent.getBundleExtra(SearchManager.APP_DATA) != null) {
+                Bundle bundle = new Bundle();
+                bundle.putAll(intent.getBundleExtra(SearchManager.APP_DATA));
+                searchIntent.putExtra(SearchManager.APP_DATA, bundle);
+            }
+            //-- SearchManager.QUERY
+            String query = intent.getStringExtra(SearchManager.QUERY);
+            if (query != null) {
+                searchIntent.putExtra(SearchManager.QUERY, query);
+            }
+            //- android.speech.RecognizerIntent.EXTRA_RESULTS
+            ArrayList<String> extraResults =
+                    intent.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
+            if (extraResults != null) {
+                searchIntent.putStringArrayListExtra(
+                        android.speech.RecognizerIntent.EXTRA_RESULTS, extraResults);
+            }
+            startActivityForResult(searchIntent, INTENT_REQUEST_SEARCH);
+            return;
+        }
+
+        // Navigate to the requested path
+        String navigateTo = intent.getStringExtra(EXTRA_NAVIGATE_TO);
+        if (navigateTo != null && navigateTo.length() >= 0) {
+            getCurrentNavigationView().changeCurrentDir(navigateTo);
+        }
+    }
+--------------------
+//DeepName predicted: {Draw Route}
+	public DrawRoute(GoogleMap mMap) {
+        this.mMap = mMap;
+    }
+//Siblings:
+	private String getJsonRoutePoint(String strUrl) throws IOException {
+        String data = "";
+        InputStream iStream = null;
+        HttpURLConnection urlConnection = null;
+        try {
+            URL url = new URL(strUrl);
+
+            // Creating an http connection to communicate with url
+            urlConnection = (HttpURLConnection) url.openConnection();
+
+            // Connecting to url
+            urlConnection.connect();
+
+            // Reading data from url
+            iStream = urlConnection.getInputStream();
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(iStream));
+
+            StringBuffer sb = new StringBuffer();
+
+            String line = "";
+            while ((line = br.readLine()) != null) {
+                sb.append(line);
+            }
+
+            data = sb.toString();
+            Log.d("getJsonRoutePoint", data.toString());
+            br.close();
+
+        } catch (Exception e) {
+            Log.d("Exception", e.toString());
+        } finally {
+            iStream.close();
+            urlConnection.disconnect();
+        }
+        return data;
+    }
+--------------------
+//DeepName predicted: {decode Poly}
+	private List<LatLng> decodePoly(String encoded) {
+
+        List<LatLng> poly = new ArrayList<>();
+        int index = 0, len = encoded.length();
+        int lat = 0, lng = 0;
+
+        while (index < len) {
+            int b, shift = 0, result = 0;
+            do {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lat += dlat;
+
+            shift = 0;
+            result = 0;
+            do {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lng += dlng;
+
+            LatLng p = new LatLng((((double) lat / 1E5)),
+                    (((double) lng / 1E5)));
+            poly.add(p);
+        }
+
+        return poly;
+    }
+--------------------
+//DeepName predicted: {generate particle}
+	private Particle generateParticle(int color, Random random) {
+        Particle particle = new Particle();
+        particle.color = color;
+        particle.radius = V;
+        if (random.nextFloat() < 0.2f) {
+            particle.baseRadius = V + ((X - V) * random.nextFloat());
+        } else {
+            particle.baseRadius = W + ((V - W) * random.nextFloat());
+        }
+        float nextFloat = random.nextFloat();
+        particle.top = mBound.height() * ((0.18f * random.nextFloat()) + 0.2f);
+        particle.top = nextFloat < 0.2f ? particle.top : particle.top + ((particle.top * 0.2f) * random.nextFloat());
+        particle.bottom = (mBound.height() * (random.nextFloat() - 0.5f)) * 1.8f;
+        float f = nextFloat < 0.2f ? particle.bottom : nextFloat < 0.8f ? particle.bottom * 0.6f : particle.bottom * 0.3f;
+        particle.bottom = f;
+        particle.mag = 4.0f * particle.top / particle.bottom;
+        particle.neg = (-particle.mag) / particle.bottom;
+        f = mBound.centerX() + (Y * (random.nextFloat() - 0.5f));
+        particle.baseCx = f;
+        particle.cx = f;
+        f = mBound.centerY() + (Y * (random.nextFloat() - 0.5f));
+        particle.baseCy = f;
+        particle.cy = f;
+        particle.life = END_VALUE / 10 * random.nextFloat();
+        particle.overflow = 0.4f * random.nextFloat();
+        particle.alpha = 1f;
+        return particle;
+    }
+--------------------
+//DeepName predicted: {Buy Number Request}
+//Class Name: BuyNumberRequest
+	public BuyNumberRequest(String country, String msisdn) {
+        this.country = country;
+        this.msisdn = msisdn;
+    }
+--------------------
+//DeepName predicted: {Search Numbers Filter}
+//Class Name: SearchNumbersFilter
+	public SearchNumbersFilter(String country) {
+        this.country = country;
+    }
+--------------------
+//DeepName predicted: {Update Number Request}
+//Class Name: UpdateNumberRequest
+	public UpdateNumberRequest(String msisdn, String country) {
+        this.country = country;
+        this.msisdn = msisdn;
+    }
+--------------------
+//DeepName predicted: {return Json}
+	private void returnJson(RoutingContext routingContext, JsonObject jsonObject) {
+        setCommonHeader(routingContext.response()
+            .putHeader("content-type", "application/json; charset=utf-8"))
+            .end(jsonObject.encodePrettily());
+    }
+//Siblings:
+	private void returnGushici(RoutingContext routingContext, String obj, JsonObject params) {
+        switch (params.getString("format")) {
+            case "json": {
+                returnJson(routingContext, new JsonObject(obj));
+                break;
+            }
+            case "svg": {
+                setCommonHeader(routingContext.response()
+                    .putHeader("Content-Type", "image/svg+xml; charset=utf-8"))
+                    .end(ConvertUtil.getSvg(new JsonObject(obj).getString("content"),
+                                params.getDouble("font-size"),
+                                params.getDouble("spacing")));
+                break;
+            }
+            case "txt": {
+                setCommonHeader(routingContext.response()
+                    .putHeader("Content-Type", "text/plain; charset=utf-8"))
+                    .end(new JsonObject(obj).getString("content"));
+                break;
+            }
+            case "png": {
+                ConvertUtil.getImageFromBase64(obj).setHandler(res -> {
+                    if (res.succeeded()) {
+                        setCommonHeader(routingContext.response()
+                            .putHeader("Content-Type", "image/png"))
+                            .putHeader("Content-Length", res.result().length() + "")
+                            .write(res.result()).end();
+                    } else {
+                        routingContext.fail(res.cause());
+                    }
+                });
+                break;
+            }
+            default:
+                routingContext.fail(new ReplyException(ReplyFailure.RECIPIENT_FAILURE, 400, "参数错误"));
+        }
+    }
+--------------------
+//DeepName predicted: {get Bias}
+	public double getBias(int mapNo) {
+		return bias[mapNo];
+	}
+//Siblings:
+	public int getClassNum() {
+		return classNum;
+	}
+--------------------
+//DeepName predicted: {Optiq Sql Validator}
+//Class Name: OptiqSqlValidator
+	public OptiqSqlValidator(
+      SqlOperatorTable opTab,
+      OptiqCatalogReader catalogReader,
+      JavaTypeFactory typeFactory) {
+		super(opTab, catalogReader, typeFactory, SqlConformance.DEFAULT);
+	}
+--------------------
+//DeepName predicted: {encode}
+	public static String encode(CharSequence s,String enc,Filter... filters) throws UnsupportedEncodingException {
+		if (s == null)   return null;
+		StringBuilder sb=new StringBuilder();
+		for (int n=0; n < s.length(); n++) {
+			char c=s.charAt(n);
+			if (!CharUtils.isHighSurrogate(c) && check(c,filters)) {
+				encode(sb,String.valueOf(c).getBytes(enc));
+			}
+			else     if (CharUtils.isHighSurrogate(c)) {
+				if (check(c,filters)) {
+					StringBuilder buf=new StringBuilder();
+					buf.append(c);
+					buf.append(s.charAt(++n));
+					byte[] b=buf.toString().getBytes(enc);
+					encode(sb,b);
+				}
+				else {
+					sb.append(c);
+					sb.append(s.charAt(++n));
+				}		
+				}
+			else {
+				sb.append(c);
+			}
+		}
+		return sb.toString();
+	}
+--------------------
+//DeepName predicted: {get Parameters}
+	public List<FunctionParameter> getParameters() {
+		return Collections.emptyList();
+    }
+//Siblings:
+	public RelDataType getRowType(RelDataTypeFactory typeFactory) {
+		return protoRowType.apply(typeFactory);
+	}
+--------------------
+//DeepName predicted: {Optiq Schema}
+//Class name: OptiqSchema	
+	public OptiqSchema(OptiqSchema parent, final Schema schema, String name) {
+    this.parent = parent;
+    this.schema = schema;
+    this.name = name;
+    assert (parent == null) == (this instanceof OptiqRootSchema);
+    this.implicitSubSchemaCache =
+        new AbstractCached<SubSchemaCache>() {
+          public SubSchemaCache build() {
+            return new SubSchemaCache(OptiqSchema.this,
+                ImmutableSortedSet.copyOf(COMPARATOR,
+                    schema.getSubSchemaNames()));
+          }
+        };
+    this.implicitTableCache =
+        new AbstractCached<ImmutableSortedSet<String>>() {
+          public ImmutableSortedSet<String> build() {
+            return ImmutableSortedSet.copyOf(COMPARATOR,
+                schema.getTableNames());
+          }
+        };
+    this.implicitFunctionCache =
+        new AbstractCached<ImmutableSortedSet<String>>() {
+          public ImmutableSortedSet<String> build() {
+            return ImmutableSortedSet.copyOf(COMPARATOR,
+                schema.getFunctionNames());
+          }
+        };
+  }
+--------------------
+//DeepName predicted: {get Balances}
+	public List<AssetBalance> getBalances() {
+		return client.getAccount().getBalances();
+	}
+//Siblings:
+	public AssetBalance getBaseBalance() {
+		return client.getAccount().getAssetBalance(baseCurrency);
+	}
+--------------------
+//DeepName predicted: {equals}
+	public boolean equals(RecoveryStatus that){
+		if (that == null)   return false;
+		if (this == that)   return true;
+		boolean this_present_name=true && this.isSetName();
+		boolean that_present_name=true && that.isSetName();
+		if (this_present_name || that_present_name) {
+			if (!(this_present_name && that_present_name))     return false;
+			if (!this.name.equals(that.name))     return false;
+		}
+		boolean this_present_runtime=true;
+		boolean that_present_runtime=true;
+		if (this_present_runtime || that_present_runtime) {
+			if (!(this_present_runtime && that_present_runtime))     return false;
+			if (this.runtime != that.runtime)     return false;
+		}
+		boolean this_present_progress=true;
+		boolean that_present_progress=true;
+		if (this_present_progress || that_present_progress) {
+			if (!(this_present_progress && that_present_progress))     return false;
+			if (this.progress != that.progress)     return false;
+		}
+		return true;
+	}
+--------------------
+//DeepName predicted: {configure}
+	private void configure(String pid,String factoryPid,Properties properties){
+		try {
+			Configuration config=getConfiguration(pid,factoryPid);
+			Dictionary<String,Object> props=config.getProperties();
+			if (props == null) {
+				props=new Hashtable<>();
+			}
+			List<String> curKeys=Collections.list(props.keys());
+			for (    Object key : properties.keySet()) {
+				if (curKeys.contains(key) && !m_reconfig) {
+					m_log.log(LogService.LOG_DEBUG,"Using previously configured value for bundle=" + pid + " key="+ key);
+				}
+				else {
+					props.put((String)key,properties.get(key));
+				}
+			}
+			if (factoryPid != null) {
+				props.put(FACTORY_INSTANCE_KEY,factoryPid + "_" + pid);
+			}
+			config.update(props);
+			m_log.log(LogService.LOG_DEBUG,"Updated configuration for pid '" + pid + "' ("+ props+ ")");
+		}
+		catch (  IOException ex) {
+			m_log.log(LogService.LOG_ERROR,"Unable to update configuration for pid '" + pid + "'",ex);
+		}
+	}
+--------------------
+//DeepName predicted: {get Primary}
+	protected ColorUIResource getPrimary1() {
+		return primary1;
+	}
+//Siblings:
+	protected ColorUIResource getPrimary2() {
+		return primary2;
+	}
+--------------------
+//DeepName predicted: {get V}	
+	public Matrix getV () {
+		return new Matrix(V,n,n);
+	}
+//Siblings:
+	public double[] getd(){
+		return d;
+	}
+--------------------
+//DeepName predicted: {solve}
+	public Matrix solve (Matrix B) {
+		if (B.getRowDimension() != n) {
+			throw new IllegalArgumentException("Matrix row dimensions must agree.");
+		}
+		if (!isspd) {
+			throw new RuntimeException("Matrix is not symmetric positive definite.");
+		}
+
+		// Copy right hand side.
+		double[][] X = B.getArrayCopy();
+		int nx = B.getColumnDimension();
+
+	     // Solve L*Y = B;
+	    for (int k = 0; k < n; k++) {
+			for (int j = 0; j < nx; j++) {
+				for (int i = 0; i < k ; i++) {
+					X[k][j] -= X[i][j]*L[k][i];
+				}
+				X[k][j] /= L[k][k];
+	        }
+	    }
+	
+	    // Solve L'*X = Y;
+	    for (int k = n-1; k >= 0; k--) {
+	        for (int j = 0; j < nx; j++) {
+				for (int i = k+1; i < n ; i++) {
+					X[k][j] -= X[i][j]*L[i][k];
+				}
+				X[k][j] /= L[k][k];
+	        }
+	    }
+      
+      
+		return new Matrix(X,n,nx);
+	}
+--------------------
+//DeepName predicted: {Matrix}
+//Class name: Matrix
+	public Matrix (int m, int n) {
+		this.m = m;
+		this.n = n;
+		A = new double[m][n];
+	}
+--------------------
+//DeepName predicted: {plus}	
+	public Matrix plus (Matrix B) {
+		checkMatrixDimensions(B);
+		Matrix X = new Matrix(m,n);
+		double[][] C = X.getArray();
+		for (int i = 0; i < m; i++) {
+			for (int j = 0; j < n; j++) {
+				C[i][j] = A[i][j] + B.A[i][j];
+			}
+		}
+		return X;
+	}
+//Siblings:
+	public Matrix plusEquals (Matrix B) {
+		checkMatrixDimensions(B);
+		for (int i = 0; i < m; i++) {
+			for (int j = 0; j < n; j++) {
+				A[i][j] = A[i][j] + B.A[i][j];
+			}
+		}
+		return this;
+	}
+--------------------
+//DeepName predicted: {set Connect Timeout}		
+	public HttpConfig setConnectTimeout(int connectTimeout) {
+        this.mConnectTimeout = connectTimeout;
+        return this;
+    }
+//Siblings:
+    public HttpConfig setReadTimeout(int readTimeout) {
+        this.mReadTimeout = readTimeout;
+        return this;
+    }
+--------------------
+//DeepName predicted: {check Collisions}		
+	private void checkCollisions() {
+		checkBoxCollisions();
+		if (ball.intersects(paddle.getBoundsInLocal())) {
+			model.incrementSpeed();
+			model.setMovingDown(false);
+		}
+		if (ball.intersects(borderTop.getBoundsInLocal())) {
+			model.incrementSpeed();
+			model.setMovingDown(true);
+		}
+		if (ball.intersects(borderBottom.getBoundsInLocal())) {
+			model.getGameStopped().set(true);
+			model.getGameLost().set(true);
+			heartbeat.stop();
+		}
+		if (ball.intersects(borderLeft.getBoundsInLocal())) {
+			model.incrementSpeed();
+			model.setMovingRight(true);
+		}
+		if (ball.intersects(borderRight.getBoundsInLocal())) {
+			model.incrementSpeed();
+			model.setMovingRight(false);
+		}
+		if (paddle.intersects(borderRight.getBoundsInLocal())) {
+			model.getPaddleX().set(350);
+		}
+		if (paddle.intersects(borderLeft.getBoundsInLocal())) {
+			model.getPaddleX().set(0);
+		}
+	}
+--------------------
+//DeepName predicted: {get Paddle Drag X}		
+	public double getPaddleDragX() {
+		return paddleDragX;
+	}
+//Siblings:
+	public BooleanProperty getGameStopped() {
+		return gameStopped;
+	}
+--------------------
+//DeepName predicted: {initialize}
+	private void initialize() {
+		// Init ComboBox
+		comboBox.setItems(comboBoxData);
+		
+		// Listen for Slider value changes
+		slider.valueProperty().addListener(new ChangeListener<Number>() {
+			@Override
+			public void changed(ObservableValue<? extends Number> observable,
+					Number oldValue, Number newValue) {
+				
+				outputTextArea.appendText("Slider Value Changed (newValue: " + newValue.intValue() + ")\n");
+			}
+		});
+		
+		// Listen for TextField text changes
+		textField.textProperty().addListener(new ChangeListener<String>() {
+			@Override
+			public void changed(ObservableValue<? extends String> observable,
+					String oldValue, String newValue) {
+				
+				outputTextArea.appendText("TextField Text Changed (newValue: " + newValue + ")\n");
+			}
+		});
+		
+		// Init ListView and listen for selection changes
+		listView.setItems(listViewData);
+		listView.getSelectionModel().selectedItemProperty().addListener(new ChangeListener<Person>() {
+			@Override
+			public void changed(ObservableValue<? extends Person> observable,
+					Person oldValue, Person newValue) {
+				
+				outputTextArea.appendText("ListView Selection Changed (newValue: " + newValue + ")\n");
+			}
+		});
+	}
+--------------------
+//DeepName predicted: {Refresh Recycler View}
+//Class name: RefreshRecyclerView
+	public RefreshRecyclerView(Context context) {
+        this(context, null);
+    }
+--------------------
+//DeepName predicted: {View Type Manager}
+//Class name: ViewTypeManager	
+	public ViewTypeManager() {
+        mPositionToTypeMap = new SparseIntArray();
+    }
+--------------------
+//DeepName predicted: {MPD Playlist}
+//Class name: MPDPlaylist
+	MPDPlaylist(final MPDConnection mpdConnection) {
+        super();
+
+        mList = new MusicList();
+        mConnection = mpdConnection;
+    }
+--------------------
+//DeepName predicted: {on Animation Update}
+	public void onAnimationUpdate(ValueAnimator animation) {
+        RadialTextsView.this.invalidate();
+    }
+//Callee:
+	public void initialize(Resources res, String[] texts, String[] innerTexts,
+            boolean is24HourMode, boolean disappearsOut) {
+        if (mIsInitialized) {
+            Log.e(TAG, "This RadialTextsView may only be initialized once.");
+            return;
+        }
+
+        // Set up the paint.
+        int numbersTextColor = res.getColor(R.color.numbers_text_color);
+        mPaint.setColor(numbersTextColor);
+        String typefaceFamily = res.getString(R.string.radial_numbers_typeface);
+        mTypefaceLight = Typeface.create(typefaceFamily, Typeface.NORMAL);
+        String typefaceFamilyRegular = res.getString(R.string.sans_serif);
+        mTypefaceRegular = Typeface.create(typefaceFamilyRegular, Typeface.NORMAL);
+        mPaint.setAntiAlias(true);
+        mPaint.setTextAlign(Align.CENTER);
+
+        mTexts = texts;
+        mInnerTexts = innerTexts;
+        mIs24HourMode = is24HourMode;
+        mHasInnerCircle = (innerTexts != null);
+
+        // Calculate the radius for the main circle.
+        if (is24HourMode) {
+            mCircleRadiusMultiplier = Float.parseFloat(
+                    res.getString(R.string.circle_radius_multiplier_24HourMode));
+        } else {
+            mCircleRadiusMultiplier = Float.parseFloat(
+                    res.getString(R.string.circle_radius_multiplier));
+            mAmPmCircleRadiusMultiplier =
+                    Float.parseFloat(res.getString(R.string.ampm_circle_radius_multiplier));
+        }
+
+        // Initialize the widths and heights of the grid, and calculate the values for the numbers.
+        mTextGridHeights = new float[7];
+        mTextGridWidths = new float[7];
+        if (mHasInnerCircle) {
+            mNumbersRadiusMultiplier = Float.parseFloat(
+                    res.getString(R.string.numbers_radius_multiplier_outer));
+            mTextSizeMultiplier = Float.parseFloat(
+                    res.getString(R.string.text_size_multiplier_outer));
+            mInnerNumbersRadiusMultiplier = Float.parseFloat(
+                    res.getString(R.string.numbers_radius_multiplier_inner));
+            mInnerTextSizeMultiplier = Float.parseFloat(
+                    res.getString(R.string.text_size_multiplier_inner));
+
+            mInnerTextGridHeights = new float[7];
+            mInnerTextGridWidths = new float[7];
+        } else {
+            mNumbersRadiusMultiplier = Float.parseFloat(
+                    res.getString(R.string.numbers_radius_multiplier_normal));
+            mTextSizeMultiplier = Float.parseFloat(
+                    res.getString(R.string.text_size_multiplier_normal));
+        }
+
+        mAnimationRadiusMultiplier = 1;
+        mTransitionMidRadiusMultiplier = 1f + (0.05f * (disappearsOut? -1 : 1));
+        mTransitionEndRadiusMultiplier = 1f + (0.3f * (disappearsOut? 1 : -1));
+        mInvalidateUpdateListener = new InvalidateUpdateListener();
+
+        mTextGridValuesDirty = true;
+        mIsInitialized = true;
+    }
+--------------------
+//DeepName predicted: {get Formatted Time}
+	public CharSequence getFormattedTime() {
+        return timeToString(mTime);
+    }
+//Callee:	
+	public static String timeToString(final long totalSeconds) {
+        final String result;
+        final long secondsInHour = 3600L;
+        final long secondsInMinute = 60L;
+        final long hours;
+        final long minutes;
+        long seconds;
+
+        if (totalSeconds < 0L) {
+            seconds = 0L;
+        } else {
+            seconds = totalSeconds;
+        }
+
+        hours = seconds / secondsInHour;
+        seconds -= secondsInHour * hours;
+
+        minutes = seconds / secondsInMinute;
+        seconds -= minutes * secondsInMinute;
+
+        if (hours == 0) {
+            result = String.format("%02d:%02d", minutes, seconds);
+        } else {
+            result = String.format("%02d:%02d:%02d", hours, minutes, seconds);
+        }
+
+        return result;
+    }
+--------------------
+//DeepName predicted: {to String}	
+	public String toString() {
+        return mainText();
+    }
+//Callee:	
+	public String mainText() {
+        String mainText = getName();
+
+        if (mainText == null || mainText.isEmpty()) {
+            final String unknownKey = "UnknownMetadata";
+            final String key = unknownKey + getClass().getSimpleName();
+            ResourceBundle labels;
+
+            try {
+                labels = ResourceBundle.getBundle(unknownKey);
+            } catch (final MissingResourceException ignored) {
+                labels = ResourceBundle.getBundle(unknownKey, Locale.ENGLISH);
+            }
+
+            if (labels.containsKey(key)) {
+                mainText = (String) labels.getObject(key);
+            }
+        }
+
+        return mainText;
+    }
+--------------------
+//DeepName predicted: {post Call}		
+	public void postCall(Command<?> command, Object result,
+        RuntimeException exception) {
+        callChain.runPostHooks(result, exception);
+    }
+//Callee:
+	final Object runPostHooks(@Nullable Object retVal, @Nullable RuntimeException exception) {
+        Command<?> command = target;
+
+        for (CommandHook hook : hooks) {
+            try {
+                retVal = hook.post(command, retVal, exception);
+            } catch (CannotRunGeogigOperationException rethrow) {
+                throw rethrow;
+            } catch (Exception e) {
+                // this exception should not be thrown in a post-execution hook, but just in case,
+                // we swallow it and ignore it
+                log.warn(
+                        "Post-command hook {} for command {} threw an exception that will not be propagated",
+                        hook, command.getClass().getName(), e);
+            }
+        }
+
+        return retVal;
+
+    }
+--------------------
+//DeepName predicted: {calculate Flow Layout}		
+	private Dimension calculateFlowLayout(boolean
+		bDoChilds){
+		...
+		if (getParent()!=null && getParent()... JViewport) {
+			JViewport viewport = (JViewport) getParent();
+			maxWidth = viewport.getExtentSize().width;
+		} else if (getParent() != null){
+			maxWidth = getParent().getWidth();
+		} else {
+			maxWidth = getWidth();
+		}
+		...
+		Dimension d = m.getPreferredSize();
+		...
+	}
+//Callee:
+	public Dimension getPreferredSize () {
+		return calculateFlowLayout(false);
+	}
