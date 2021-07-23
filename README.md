@@ -32,6 +32,8 @@ Our non-copy mechanism is built on the top of the copy mechanism. The copy mecha
 
 2. Download the datasets for both method name consistency checking and method name recommendation tasks.
 
-3. Use ```DeepName\src\edu\org\pre\data\clean``` to get the tokens from the data.
+3. If you use the Doxygen generate the call graphs, please run ```read_graphs.py``` to combine.
 
-4. Run ```nmt.py``` with parameter --deepname to active deepname approach and --share_vocab to generate results.
+4. Change the data root path in ```main.py``` to the position that you put the data set.
+ 
+5. Run ```main.py``` to run our approach.
